@@ -21,3 +21,4 @@ class Order(Base):
     customer = relationship("Customer", back_populates="orders")
     seller = relationship("Seller", back_populates="orders")
     returns = relationship("Return", back_populates="order")
+    reviews = relationship("Review", back_populates="order")

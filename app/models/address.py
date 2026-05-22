@@ -22,4 +22,4 @@ class Address(Base):
 
     customer = relationship("Customer", back_populates="addresses")
     seller = relationship("Seller", back_populates="addresses")
-    orders = relationship("Order", back_populates="addresses")
+    orders = relationship("Order", back_populates="address")

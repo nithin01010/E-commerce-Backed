@@ -20,3 +20,4 @@ class Seller(Base):
     user = relationship("User", back_populates="seller")
     orders = relationship("Order", back_populates="seller")
     products = relationship("Product", back_populates="seller")
+    addresses = relationship("Address", back_populates="seller")

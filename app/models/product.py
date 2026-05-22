@@ -25,6 +25,8 @@ class Product(Base):
     category = relationship("Category", back_populates="products")
     stock_history = relationship("StockHistory", back_populates="product", cascade="all, delete-orphan")
     images = relationship("ProductImage", back_populates="product", cascade="all, delete-orphan")
+    orders = relationship("Order", back_populates="product")
+    cart_items = relationship("Cart", back_populates="product")
 
 class ProductImage(Base):
     __tablename__ = "productimages"

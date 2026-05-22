@@ -31,7 +31,7 @@ async def get_current_user(
     redis_client: redis.Redis = Depends(get_redis),
 ) -> User:
     token = request.cookies.get("access_token")
-    
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Not authenticated or token expired",
@@ -64,3 +64,4 @@ async def get_current_user(
         raise credentials_exception
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
+    return user

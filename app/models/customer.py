@@ -12,9 +12,7 @@ class Customer(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
-
-    user = relationship("User", back_populates="customers")
-    address = relationship("Address", back_populates="customers")
-    orders = relationship("Order", back_populates="customers")
-    cart = relationship("Cart", back_populates="customers")
-    reviews = relationship("Review", back_populates="customers")
+    user = relationship("User", back_populates="customer")
+    addresses = relationship("Address", back_populates="customer")
+    orders = relationship("Order", back_populates="customer")
+    cart = relationship("Cart", back_populates="customer")
