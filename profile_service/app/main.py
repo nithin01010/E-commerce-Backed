@@ -1,18 +1,12 @@
 from fastapi import FastAPI
 from app.core.config import settings
-from app.api.endpoints import auth, customer, seller, address, category
+from app.api.endpoints import customer, seller, address
 
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.VERSION
 )
-app.include_router(
-    auth.router,
-    prefix="/auth",
-    tags=["Auth"]
-)
-
 app.include_router(
     customer.router,
     prefix='/customer',
@@ -26,9 +20,9 @@ app.include_router(
 )
 
 app.include_router(
-    category.router,
-    prefix='/categories',
-    tags=["Categories"]
+    address.router,
+    prefix='/address',
+    tags=["Addresses"]
 )
 
 
