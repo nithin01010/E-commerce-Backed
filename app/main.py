@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from app.core.config import settings
-from app.api.endpoints import auth, customer, seller, address, category
+from app.api.endpoints import auth, customer, seller, address
+from app.api.endpoints import category, cart, order, review
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
@@ -10,7 +11,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
@@ -46,6 +47,24 @@ app.include_router(
     category.router,
     prefix='/categories',
     tags=["Categories"]
+)
+
+app.include_router(
+    cart.router,
+    prefix="/cart",
+    tags=["Cart"]
+)
+
+app.include_router(
+    order.router,
+    prefix="/orders",
+    tags=["Orders"]
+)
+
+app.include_router(
+    review.router,
+    prefix="/reviews",
+    tags=["Reviews"]
 )
 
 

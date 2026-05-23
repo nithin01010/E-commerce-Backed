@@ -44,7 +44,7 @@ async def create_address(
 
         if not customer:
             raise HTTPException(
-                status_code=400,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Customer profile not found"
             )
         new_address.customer_id = customer.id
@@ -58,13 +58,13 @@ async def create_address(
 
         if not seller:
             raise HTTPException(
-                status_code=400,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Seller profile not found"
             )
         new_address.seller_id = seller.id
     else:
         raise HTTPException(
-            status_code=403,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="Admins do not need addresses"
         )
 
@@ -106,7 +106,7 @@ async def get_my_address(
         )
     else:
         raise HTTPException(
-            status_code=403,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="Admins do not have addresses"
         )
     addresses = addr_result.scalars().all()
@@ -123,7 +123,7 @@ async def delete_address(
     address = result.scalars().first()
 
     if not address:
-        raise HTTPException(status_code=404, detail="Address not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Address not found")
 
     # Security Check: Make sure it belongs to them!
     if current_user.role_id == 1:
@@ -133,7 +133,7 @@ async def delete_address(
                 )
             )
         if address.customer_id != cust_res.scalars().first():
-            raise HTTPException(status_code=403, detail="Not your address")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your address")
 
     elif current_user.role_id == 2:
         sell_res = await db.execute(
@@ -142,11 +142,11 @@ async def delete_address(
                 )
             )
         if address.seller_id != sell_res.scalars().first():
-            raise HTTPException(status_code=403, detail="Not your address")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your address")
 
     else:
         raise HTTPException(
-            status_code=403,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="Admins cannot delete addresses"
             )
 
