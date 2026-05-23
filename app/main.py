@@ -1,8 +1,11 @@
 from fastapi import FastAPI
 from app.core.config import settings
 from app.api.endpoints import auth, customer, seller, address
-from app.api.endpoints import category, cart, order, review
+from app.api.endpoints import category, cart, order, review, product, support
 from fastapi.middleware.cors import CORSMiddleware
+import importlib
+
+return_endpoint = importlib.import_module("app.api.endpoints.return")
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -67,7 +70,26 @@ app.include_router(
     tags=["Reviews"]
 )
 
+app.include_router(
+    product.router,
+    prefix="/products",
+    tags=["Products"]
+)
+
+app.include_router(
+    return_endpoint.router,
+    prefix="/returns",
+    tags=["Returns"]
+)
+
+app.include_router(
+    support.router,
+    prefix="/support",
+    tags=["Support"]
+)
+
 
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
+
