@@ -248,3 +248,15 @@ async def reset_password(
     await db.commit()
 
     return {"message": "Password has been reset successfully"}
+
+
+@router.get("/role_id", response_model=UserResponse)
+async def get_me(current_user: User = Depends(get_current_user)):
+    """
+    Get the details of the currently authenticated user, including their role_id.
+    Role mappings:
+    - 1: Customer
+    - 2: Seller
+    - 3: Admin
+    """
+    return current_user.role_id

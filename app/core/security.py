@@ -49,7 +49,7 @@ def create_refresh_token(
         expire += timedelta(
             days=settings.REFRESH_TOKEN_EXPIRE_DAYS
         )
-    
+
     encoded_jwt = jwt.encode(
         to_encode,
         settings.SECRET_KEY,

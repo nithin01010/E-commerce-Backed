@@ -11,5 +11,5 @@ from .order import Order
 from .review import Review
 from .return_request import Return
 from .stock_history import StockHistory
-from .support import SupportTicket
+from .support import SupportTicket, TicketReply
 from .notification import Notification

@@ -1,14 +1,15 @@
 {
-    "sqltools.connections": [
-        {
-            "ssh": "Disabled",
-            "previewLimit": 50,
-            "server": "localhost",
-            "port": 5433,
-            "driver": "PostgreSQL",
-            "name": "ecommerce",
-            "database": "ecommerce",
-            "username": "postgres"
-        }
-    ]
+  "sqltools.connections": [
+    {
+      "ssh": "Disabled",
+      "previewLimit": 50,
+      "server": "localhost",
+      "port": 5433,
+      "driver": "PostgreSQL",
+      "name": "ecommerce",
+      "database": "ecommerce",
+      "username": "postgres"
+    }
+  ],
+  "DockerRun.DisableDockerrc": true
 }

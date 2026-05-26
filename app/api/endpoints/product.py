@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+from typing import List, Optional
 from app.core.database import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
@@ -175,3 +176,53 @@ async def add_product_image(
     await db.commit()
     await db.refresh(new_image)
     return new_image
+
+
+# ----------------------------- CUSTOMER & SELLER DISCOVERY -----------------------------
+
+
+@router.get("/", response_model=List[ProductResponse])
+async def search_products(
+    category_id: Optional[int] = None,
+    search: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    query = select(Product).where(
+        Product.is_verified == True,
+        Product.status == "active"
+    ).options(selectinload(Product.images))
+    
+    if category_id:
+        query = query.where(Product.category_id == category_id)
+        
+    if search:
+        query = query.where(
+            Product.name.ilike(f"%{search}%") | 
+            Product.description.ilike(f"%{search}%")
+        )
+        
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+@router.get("/{product_id}", response_model=ProductResponse)
+async def get_product_details(
+    product_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(Product)
+        .where(
+            Product.id == product_id,
+            Product.is_verified == True,
+            Product.status == "active"
+        )
+        .options(selectinload(Product.images))
+    )
+    product = result.scalars().first()
+    if not product:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product not found"
+        )
+    return product

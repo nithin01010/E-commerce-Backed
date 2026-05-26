@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from app.core.config import settings
 from app.api.endpoints import auth, customer, seller, address
-from app.api.endpoints import category, cart, order, review, product, support
+from app.api.endpoints import category, cart, order, review, product, support, admin
 from fastapi.middleware.cors import CORSMiddleware
 import importlib
 
@@ -86,6 +86,12 @@ app.include_router(
     support.router,
     prefix="/support",
     tags=["Support"]
+)
+
+app.include_router(
+    admin.router,
+    prefix="/admin",
+    tags=["Admin"]
 )
 
 
