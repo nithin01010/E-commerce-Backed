@@ -8,10 +8,11 @@ import redis.asyncio as redis
 
 from app.core.database import get_db
 from app.models.user import User
-from app.schemas.user import UserCreate, UserResponse
+from app.schemas.user import UserCreate, UserResponse, ForgetPassword, ResetPassword
 from app.core.config import settings
-from app.core.security import verify_password, get_password_hash
-from app.core.security import create_access_token
+from jose import jwt, JWTError
+from app.core.security import verify_password, get_password_hash, create_password_reset_token
+from app.core.security import create_access_token, create_refresh_token
 from app.api.deps import get_redis, get_current_user
 
 router = APIRouter()
@@ -55,11 +56,24 @@ async def login(
     access_token = create_access_token(
         data={"sub": str(user.id)}, expires_delta=access_token_expire
     )
+    ref = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    refresh_token = create_refresh_token(
+        data={"sub": str(user.id)}, expires_delta=ref
+    )
 
     # HTTP Cookie
     response.set_cookie(
         key="access_token",
         value=access_token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
         httponly=True,
         secure=True,
         samesite="lax",
@@ -77,13 +91,160 @@ async def logout(
     current_user: User = Depends(get_current_user),
 ):
     token = request.cookies.get("access_token")
+    ref = request.cookies.get("refresh_token")
     # Add token to Redis blacklist with a TTL equal to token expiration
     if token:
         await redis_client.setex(
             f"blacklist:{token}", settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60, "true"
         )
+    if ref:
+        await redis_client.setex(
+            f"blacklist:{ref}", settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60, "true"
+        )
 
     # Clear the cookie
     response.delete_cookie("access_token")
+    response.delete_cookie("refresh_token")
 
     return {"message": "Successfully logged out"}
+
+
+@router.post("/refresh")
+async def refresh_token(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    redis_client: redis.Redis = Depends(get_redis)
+):
+    rf_t = request.cookies.get("refresh_token")
+
+    if not rf_t:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token missing"
+        )
+
+    is_blacklisted = await redis_client.get(f"blacklist:{rf_t}")
+    if is_blacklisted:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token has been revoked"
+        )
+
+    try:
+        payload = jwt.decode(
+            rf_t, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+        )
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token"
+            )
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token"
+        )
+
+    result = await db.execute(select(User).where(User.id == int(user_id)))
+    user = result.scalars().first()
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive"
+        )
+
+    access_token_expire = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    new_access_token = create_access_token(
+        data={"sub": str(user.id)}, expires_delta=access_token_expire
+    )
+
+    new_refresh_token_expire = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    new_refresh_token = create_refresh_token(
+        data={"sub": str(user.id)}, expires_delta=new_refresh_token_expire
+    )
+
+    # Blacklist old refresh token
+    await redis_client.setex(
+        f"blacklist:{rf_t}", settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60, "true"
+    )
+
+    # Set new cookies
+    response.set_cookie(
+        key="access_token",
+        value=new_access_token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
+    response.set_cookie(
+        key="refresh_token",
+        value=new_refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
+    return {"message": "Token refreshed successfully"}
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    forgot_in: ForgetPassword,
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(select(User).where(User.email == forgot_in.email))
+    user = result.scalars().first()
+    if not user:
+        return {"message": "If the email exists, a password reset link has been sent."}
+
+    reset_token = create_password_reset_token(user.email)
+
+    print(f"\n=======================================================")
+    print(f"PASSWORD RESET LINK FOR {user.email}:")
+    print(f"http://localhost:5173/reset-password?token={reset_token}")
+    print(f"=======================================================\n")
+
+    return {"message": "If the email exists, a password reset link has been sent."}
+
+
+@router.post("/reset-password")
+async def reset_password(
+    reset_in: ResetPassword,
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        payload = jwt.decode(
+            reset_in.token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+        )
+        email: str = payload.get("sub")
+        token_type: str = payload.get("type")
+
+        if email is None or token_type != "resst":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired reset token"
+            )
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        )
+
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalars().first()
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User not found or inactive"
+        )
+
+    hashed_pwd = get_password_hash(reset_in.new_password)
+    user.password = hashed_pwd
+    await db.commit()
+
+    return {"message": "Password has been reset successfully"}
