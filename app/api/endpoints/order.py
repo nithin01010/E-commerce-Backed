@@ -103,7 +103,7 @@ async def checkout(
     cart_result = await db.execute(
         select(Cart)
         .where(Cart.customer_id == customer.id)
-        .options(selectinload(Cart.product))
+        .options(selectinload(Cart.product).selectinload(Product.images))
     )
 
     cart_items = cart_result.scalars().all()
@@ -177,7 +177,9 @@ async def update_order_status(
         )
     seller = await get_seller_profile(db, current_user.id)
     result = await db.execute(
-        select(Order).where(Order.id == order_id, Order.seller_id == seller.id)
+        select(Order).where(
+            Order.id == order_id, Order.seller_id == seller.id
+        )
     )
     order = result.scalars().first()
     if not order:

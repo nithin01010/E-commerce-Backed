@@ -71,7 +71,7 @@ async def get_user_cart(
         select(Cart).where(
             Cart.customer_id == customer.id
         ).options(
-            selectinload(Cart.product)
+            selectinload(Cart.product).selectinload(Product.images)
         )
     )
     return result.scalars().all()
@@ -93,6 +93,8 @@ async def add_to_cart(
     product_result = await db.execute(
         select(Product).where(
             Product.id == item_in.product_id
+        ).options(
+            selectinload(Product.images)
         )
     )
     product = product_result.scalars().first()
@@ -108,7 +110,7 @@ async def add_to_cart(
             Cart.customer_id == customer.id, Cart.product_id == product.id
         ).options(selectinload(
                 Cart.product
-            )
+            ).selectinload(Product.images)
         )
     )
     cart_item_db = cart_result.scalars().first()
@@ -147,7 +149,7 @@ async def update_cart_item(
             Cart.id == item_id, Cart.customer_id == customer.id
         ).options(selectinload(
                 Cart.product
-            )
+            ).options(Product.images)
         )
     )
 

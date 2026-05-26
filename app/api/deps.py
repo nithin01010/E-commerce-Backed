@@ -1,5 +1,6 @@
 from fastapi import Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from jose import jwt, JWTError
 import redis.asyncio as redis
@@ -12,6 +13,11 @@ from app.models.user import User
 redis_pool = redis.ConnectionPool.from_url(
     settings.REDIS_URL, decode_responses=True
     )
+
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="auth/login",
+    auto_error=False
+)
 
 
 async def get_redis():
@@ -27,8 +33,9 @@ async def get_current_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
     redis_client: redis.Redis = Depends(get_redis),
+    token_from_header: str = Depends(oauth2_scheme)
 ) -> User:
-    token = request.cookies.get("access_token")
+    token = request.cookies.get("access_token") or token_from_header
 
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

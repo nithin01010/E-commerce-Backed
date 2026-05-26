@@ -1,17 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Response
-from fastapi import Request
+from fastapi import Request, Header
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import timedelta
 import redis.asyncio as redis
+from typing import Optional
 
 from app.core.database import get_db
 from app.models.user import User
-from app.schemas.user import UserCreate, UserResponse, ForgetPassword, ResetPassword
+from app.schemas.user import UserCreate, UserResponse, ForgetPassword
+from app.schemas.user import ResetPassword
 from app.core.config import settings
 from jose import jwt, JWTError
-from app.core.security import verify_password, get_password_hash, create_password_reset_token
+from app.core.security import verify_password, get_password_hash
+from app.core.security import create_password_reset_token
 from app.core.security import create_access_token, create_refresh_token
 from app.api.deps import get_redis, get_current_user
 
@@ -25,10 +28,17 @@ router = APIRouter()
 async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == user_in.email))
     if result.scalars().first():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registerd")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registerd"
+        )
 
     hashed_pwd = get_password_hash(user_in.password)
-    new_user = User(email=user_in.email, password=hashed_pwd, role_id=user_in.role_id)
+    new_user = User(
+        email=user_in.email,
+        password=hashed_pwd,
+        role_id=user_in.role_id
+    )
     db.add(new_user)
     await db.commit()
     await db.refresh(new_user)
@@ -42,7 +52,11 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(User).where(User.email == form_data.username))
+    result = await db.execute(
+        select(User).where(
+            User.email == form_data.username
+        )
+    )
     user = result.scalars().first()
 
     if not user or not verify_password(form_data.password, user.password):
@@ -52,7 +66,9 @@ async def login(
         )
 
     # creeate JWT token
-    access_token_expire = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expire = timedelta(
+        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+        )
     access_token = create_access_token(
         data={"sub": str(user.id)}, expires_delta=access_token_expire
     )
@@ -68,7 +84,7 @@ async def login(
         httponly=True,
         secure=True,
         samesite="lax",
-        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 600,
     )
 
     response.set_cookie(
@@ -80,7 +96,12 @@ async def login(
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
-    return {"message": "Successfully logged in", "token_type": "bearer"}
+    return {
+        "message": "Successfully logged in",
+        "token_type": "bearer",
+        "access_token": access_token,
+        "refresh_token": refresh_token
+    }
 
 
 @router.post("/logout")
@@ -95,11 +116,13 @@ async def logout(
     # Add token to Redis blacklist with a TTL equal to token expiration
     if token:
         await redis_client.setex(
-            f"blacklist:{token}", settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60, "true"
+            f"blacklist:{token}",
+            settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60, "true"
         )
     if ref:
         await redis_client.setex(
-            f"blacklist:{ref}", settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60, "true"
+            f"blacklist:{ref}",
+            settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60, "true"
         )
 
     # Clear the cookie
@@ -114,9 +137,10 @@ async def refresh_token(
     request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
-    redis_client: redis.Redis = Depends(get_redis)
+    redis_client: redis.Redis = Depends(get_redis),
+    x_refresh_token: Optional[str] = Header(None)
 ):
-    rf_t = request.cookies.get("refresh_token")
+    rf_t = request.cookies.get("refresh_token") or x_refresh_token
 
     if not rf_t:
         raise HTTPException(
@@ -155,12 +179,16 @@ async def refresh_token(
             detail="User not found or inactive"
         )
 
-    access_token_expire = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expire = timedelta(
+        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+        )
     new_access_token = create_access_token(
         data={"sub": str(user.id)}, expires_delta=access_token_expire
     )
 
-    new_refresh_token_expire = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    new_refresh_token_expire = timedelta(
+        days=settings.REFRESH_TOKEN_EXPIRE_DAYS
+        )
     new_refresh_token = create_refresh_token(
         data={"sub": str(user.id)}, expires_delta=new_refresh_token_expire
     )
@@ -197,19 +225,26 @@ async def forgot_password(
     forgot_in: ForgetPassword,
     db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(select(User).where(User.email == forgot_in.email))
+    result = await db.execute(
+        select(User).where(
+            User.email == forgot_in.email
+            )
+        )
     user = result.scalars().first()
     if not user:
-        return {"message": "If the email exists, a password reset link has been sent."}
+        return {
+            "message": "A password reset link has been sent."
+            }
 
     reset_token = create_password_reset_token(user.email)
 
-    print(f"\n=======================================================")
+    print("\n=======================================================")
     print(f"PASSWORD RESET LINK FOR {user.email}:")
     print(f"http://localhost:5173/reset-password?token={reset_token}")
-    print(f"=======================================================\n")
+    print("=======================================================\n")
 
-    return {"message": "If the email exists, a password reset link has been sent."}
+    return {"message": """If the email exists, 
+    a password reset link has been sent."""}
 
 
 @router.post("/reset-password")
@@ -219,7 +254,9 @@ async def reset_password(
 ):
     try:
         payload = jwt.decode(
-            reset_in.token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+            reset_in.token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM]
         )
         email: str = payload.get("sub")
         token_type: str = payload.get("type")
@@ -250,13 +287,6 @@ async def reset_password(
     return {"message": "Password has been reset successfully"}
 
 
-@router.get("/role_id", response_model=UserResponse)
+@router.get("/role_id", response_model=int)
 async def get_me(current_user: User = Depends(get_current_user)):
-    """
-    Get the details of the currently authenticated user, including their role_id.
-    Role mappings:
-    - 1: Customer
-    - 2: Seller
-    - 3: Admin
-    """
     return current_user.role_id

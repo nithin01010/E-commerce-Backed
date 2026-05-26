@@ -10,7 +10,7 @@ from app.models.category import Category
 from app.models.seller import Seller
 from app.models.product import Product, ProductImage
 from app.schemas.product import ProductCreate, ProductImageResponse
-from app.schemas.product import ProductResponse
+from app.schemas.product import ProductResponse, ProductUpdate
 
 
 router = APIRouter()
@@ -67,7 +67,7 @@ async def get_product(db, product_id, seller_id):
     prod = await db.execute(
         select(Product)
         .where(Product.id == product_id, Product.seller_id == seller_id)
-        .options(Product.images)
+        .options(selectinload(Product.images))
     )
     product = prod.scalars().first()
     check_product_exists1(product)
@@ -105,7 +105,7 @@ async def create_product(
 
     db.add(new_prod)
     await db.commit()
-    await db.refresh(new_prod)
+    await db.refresh(new_prod, ["images"])
     return new_prod
 
 
@@ -119,7 +119,7 @@ async def update_product(
     check_is_seller(current_user.role_id)
 
     seller = await get_seller_profile(db, current_user.id)
-    product = await get_product(product_id, seller.id)
+    product = await get_product(db, product_id, seller.id)
 
     cat = await db.execute(
         select(Category).where(Category.id == product_in.category_id)
@@ -135,6 +135,36 @@ async def update_product(
 
     await db.commit()
     await db.refresh(product)
+    return product
+
+
+@router.patch("/{product_id}", response_model=ProductResponse)
+async def partially_update_product(
+    product_id: int,
+    product_in: ProductUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    check_is_seller(current_user.role_id)
+
+    seller = await get_seller_profile(db, current_user.id)
+    product = await get_product(db, product_id, seller.id)
+
+    update_data = product_in.model_dump(exclude_unset=True) 
+
+    if "category_id" in update_data:
+        cat = await db.execute(
+            select(Category).where(Category.id == product_in.category_id)
+        )
+        category = cat.scalars().first()
+        check_category_exists(category)
+
+    for field, value in update_data.items():
+        setattr(product, field, value)
+
+    await db.commit()
+    await db.refresh(product)
+    
     return product
 
 
@@ -178,7 +208,7 @@ async def add_product_image(
     return new_image
 
 
-# ----------------------------- CUSTOMER & SELLER DISCOVERY -----------------------------
+# ----------------------------- CUSTOMER & SELLER DISCOVERY ---------------
 
 
 @router.get("/", response_model=List[ProductResponse])

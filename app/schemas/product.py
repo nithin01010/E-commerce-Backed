@@ -18,6 +18,14 @@ class ProductCreate(BaseModel):
     category_id: int
 
 
+class ProductUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[int] = None
+    stock: Optional[int] = None
+    category_id: Optional[int] = None
+
+
 class ProductResponse(BaseModel):
     id: int
     name: str
