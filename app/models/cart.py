@@ -8,8 +8,8 @@ class Cart(Base):
 
     quantity = Column(Integer, nullable=False, default=1)
 
-    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

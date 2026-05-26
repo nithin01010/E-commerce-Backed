@@ -6,6 +6,10 @@ from app.api.endpoints import product, support, admin
 from fastapi.middleware.cors import CORSMiddleware
 import importlib
 
+import redis.asyncio as redis
+from fastapi_limiter import FastAPILimiter
+from app.core.config import settings
+
 from fastapi.exceptions import ResponseValidationError
 from fastapi.responses import JSONResponse
 
@@ -111,3 +115,14 @@ async def validation_exception_handler(request, exc):
         status_code=500,
         content={"detail": str(exc.errors())}
     )
+
+
+# Rate limiting
+@app.on_event("startup")
+async def startup():
+    redis_client = redis.from_url(
+        settings.REDIS_URL,
+        encoding="utf-8",
+        decode_responses=True
+    )
+    await FastAPILimiter.init(redis_client)

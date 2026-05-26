@@ -18,7 +18,8 @@ from app.schemas.profile import CustomerResponse, SellerResponse
 from app.schemas.product import ProductResponse
 from app.schemas.review import ReviewResponse
 from app.schemas.order import OrderResponse
-from app.schemas.support import SupportTicketResponse, TicketReplyCreate, TicketReplyResponse
+from app.schemas.support import SupportTicketResponse, TicketReplyCreate
+from app.schemas.support import TicketReplyResponse
 from app.core.config import settings
 
 router = APIRouter()

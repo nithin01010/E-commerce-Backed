@@ -18,6 +18,9 @@ from app.core.security import create_password_reset_token
 from app.core.security import create_access_token, create_refresh_token
 from app.api.deps import get_redis, get_current_user
 
+from fastapi_limiter.depends import RateLimiter
+
+
 router = APIRouter()
 
 
@@ -46,7 +49,10 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
     return new_user
 
 
-@router.post("/login")
+@router.post(
+    "/login",
+    dependencies=[Depends(RateLimiter(times=5, seconds=60))]
+)
 async def login(
     response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
