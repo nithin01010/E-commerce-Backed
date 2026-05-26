@@ -34,3 +34,6 @@ def create_access_token(
         algorithm=settings.ALGORITHM
     )
     return encoded_jwt
+
+
+# Refresh token

@@ -18,7 +18,8 @@ router = APIRouter()
 
 
 @router.post(
-    "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
+    "/register", response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED
 )
 async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == user_in.email))

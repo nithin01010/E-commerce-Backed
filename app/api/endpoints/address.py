@@ -142,7 +142,10 @@ async def delete_address(
                 )
             )
         if address.seller_id != sell_res.scalars().first():
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your address")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not your address"
+                )
 
     else:
         raise HTTPException(
@@ -154,3 +157,7 @@ async def delete_address(
     await db.commit()
 
     return None
+
+
+class new:
+    name = 'str'
