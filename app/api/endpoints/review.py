@@ -2,7 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List
-
+import redis.asyncio as redis
+from app.core.cache import get_cached, serialize_review, set_cache
+from app.core.cache import invalidate_pattern
 from app.core.database import get_db
 from app.models.user import User
 from app.models.customer import Customer
@@ -11,7 +13,7 @@ from app.models.product import Product
 from app.models.order import Order
 from app.models.review import Review
 from app.schemas.review import ReviewCreate, ReviewResponse
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_redis
 
 
 router = APIRouter()
@@ -108,7 +110,8 @@ async def update_seller_rating(db, order):
 async def create_review(
     review_in: ReviewCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    redis_client: redis.Redis = Depends(get_redis)
 ):
     check_auth(current_user.role_id)
 
@@ -140,26 +143,63 @@ async def create_review(
 
     await db.commit()
 
+    # Invalidate review caches
+    await redis_client.delete(f"reviews:product:{order.product_id}")
+    await redis_client.delete(f"reviews:seller:{order.seller_id}")
+
+    await redis_client.delete(f"product:{order.product_id}")
+    await invalidate_pattern(redis_client, "products:*")
+
     return new_review
 
 
 @router.get("/product/{product_id}", response_model=List[ReviewResponse])
 async def get_product_reviews(
     product_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis_client: redis.Redis = Depends(get_redis)
 ):
+    # Try cache
+    cache_key = f"reviews:product:{product_id}"
+    cached = await get_cached(redis_client, cache_key)
+    if cached:
+        return cached
+
     result = await db.execute(
         select(Review).join(Order).where(Order.product_id == product_id)
     )
-    return result.scalars().all()
+    reviews = result.scalars().all()
+    await set_cache(
+        redis_client,
+        cache_key,
+        [serialize_review(v) for v in reviews],
+        ttl=60
+    )
+
+    return reviews
 
 
 @router.get("/seller/{seller_id}", response_model=List[ReviewResponse])
 async def get_seller_reviews(
     seller_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis_client: redis.Redis = Depends(get_redis)
 ):
+    # Try cache
+    cache_key = f"reviews:seller:{seller_id}"
+    cached = await get_cached(redis_client, cache_key)
+    if cached:
+        return cached
+
     result = await db.execute(
         select(Review).join(Order).where(Order.seller_id == seller_id)
     )
-    return result.scalars().all()
+    reviews = result.scalars().all()
+    await set_cache(
+        redis_client,
+        cache_key,
+        [serialize_review(v) for v in reviews],
+        ttl=60
+    )
+
+    return reviews

@@ -4,13 +4,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from app.core.database import get_db
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_redis
 from app.models.user import User
 from app.models.category import Category
 from app.models.seller import Seller
 from app.models.product import Product, ProductImage
 from app.schemas.product import ProductCreate, ProductImageResponse
 from app.schemas.product import ProductResponse, ProductUpdate
+import redis.asyncio as redis
+from app.core.cache import get_cached, set_cache, invalidate_pattern
+from app.core.cache import serialize_product
 
 
 router = APIRouter()
@@ -24,7 +27,8 @@ async def get_seller_profile(db: AsyncSession, user_id: int) -> Seller:
     seller = result.scalars().first()
     if not seller:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Seller profile not found."
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Seller profile not found."
         )
     return seller
 
@@ -46,7 +50,9 @@ def check_category_exists(category):
 
 async def check_product_exists(db: AsyncSession, name: str, seller_id: int):
     result = await db.execute(
-        select(Product).where(Product.name == name, Product.seller_id == seller_id)
+        select(Product).where(
+            Product.name == name, Product.seller_id == seller_id
+        )
     )
     product = result.scalars().first()
     if product:
@@ -77,11 +83,16 @@ async def get_product(db, product_id, seller_id):
 # ----------------------------------------------------------------------------------
 
 
-@router.post("/", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/",
+    response_model=ProductResponse,
+    status_code=status.HTTP_201_CREATED
+)
 async def create_product(
     product_in: ProductCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis_client: redis.Redis = Depends(get_redis)
 ):
     check_is_seller(current_user.role_id)
 
@@ -106,6 +117,17 @@ async def create_product(
     db.add(new_prod)
     await db.commit()
     await db.refresh(new_prod, ["images"])
+
+    # WRITE-THROUGH: cache
+    await set_cache(
+        redis_client,
+        f"product:{new_prod.id}",
+        serialize_product(new_prod),
+        ttl=120
+    )
+
+    await invalidate_pattern(redis_client, "products:*")
+
     return new_prod
 
 
@@ -115,6 +137,7 @@ async def update_product(
     product_in: ProductCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis_client: redis.Redis = Depends(get_redis)
 ):
     check_is_seller(current_user.role_id)
 
@@ -135,6 +158,17 @@ async def update_product(
 
     await db.commit()
     await db.refresh(product)
+
+    # WRITE-THROUGH: cache
+    await set_cache(
+        redis_client,
+        f"product:{product.id}",
+        serialize_product(product),
+        ttl=120
+    )
+
+    await invalidate_pattern(redis_client, "products:*")
+
     return product
 
 
@@ -144,13 +178,14 @@ async def partially_update_product(
     product_in: ProductUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis_client: redis.Redis = Depends(get_redis)
 ):
     check_is_seller(current_user.role_id)
 
     seller = await get_seller_profile(db, current_user.id)
     product = await get_product(db, product_id, seller.id)
 
-    update_data = product_in.model_dump(exclude_unset=True) 
+    update_data = product_in.model_dump(exclude_unset=True)
 
     if "category_id" in update_data:
         cat = await db.execute(
@@ -164,7 +199,17 @@ async def partially_update_product(
 
     await db.commit()
     await db.refresh(product)
-    
+
+    # WRITE-THROUGH: cache
+    await set_cache(
+        redis_client,
+        f"product:{product.id}",
+        serialize_product(product),
+        ttl=120
+    )
+
+    await invalidate_pattern(redis_client, "products:*")
+
     return product
 
 
@@ -173,6 +218,7 @@ async def delete_product(
     product_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    redis_client: redis.Redis = Depends(get_redis)
 ):
     check_is_seller(current_user.role_id)
 
@@ -182,6 +228,10 @@ async def delete_product(
 
     await db.delete(product)
     await db.commit()
+
+    # evict deleted product
+    await redis_client.delete(f"product:{product.id}")
+    await invalidate_pattern(redis_client, "products:*")
     return
 
 
@@ -215,31 +265,57 @@ async def add_product_image(
 async def search_products(
     category_id: Optional[int] = None,
     search: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis_client: redis.Redis = Depends(get_redis)
 ):
+
+    # Try cache
+    cache_key = f"procducts:cat={category_id}:search={search}"
+
+    cached = await get_cached(redis_client, cache_key)
+    if cached:
+        return cached
+
     query = select(Product).where(
         Product.is_verified == True,
         Product.status == "active"
     ).options(selectinload(Product.images))
-    
+
     if category_id:
         query = query.where(Product.category_id == category_id)
-        
+
     if search:
         query = query.where(
-            Product.name.ilike(f"%{search}%") | 
+            Product.name.ilike(f"%{search}%") |
             Product.description.ilike(f"%{search}%")
         )
-        
+
     result = await db.execute(query)
-    return result.scalars().all()
+    products = result.scalars().all()
+
+    # add to cache
+    await set_cache(
+        redis_client,
+        cache_key,
+        [serialize_product(p) for p in products],
+        ttl=60
+    )
+
+    return products
 
 
 @router.get("/{product_id}", response_model=ProductResponse)
 async def get_product_details(
     product_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis_client: redis.Redis = Depends(get_redis)
 ):
+    # Try cache
+    cache_key = f"product:{product_id}"
+    cached = await get_cached(redis_client, cache_key)
+    if cached:
+        return cached
+
     result = await db.execute(
         select(Product)
         .where(
@@ -255,4 +331,12 @@ async def get_product_details(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Product not found"
         )
+
+    # add to cache
+    await set_cache(
+        redis_client,
+        cache_key,
+        [serialize_product(p) for p in product],
+        ttl=120
+    )
     return product

@@ -60,14 +60,21 @@ def check_cart(cart_items):
         )
 
 
-def check_stock(cart_item):
-    if cart_item.product.stock < cart_item.quantity:
+def check_availability(product):
+    if not product:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"""Product '{cart_item.product.name}' is out of stock or
-            has insufficient quantity""",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product no longer exists"
         )
 
+
+def check_stock(product, need):
+    if product.stock < need:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=product.name + " has only " + str(product.stock)
+            + " items left in stock"
+        )
 
 # -----------------------------------------------------------------
 
@@ -112,10 +119,17 @@ async def checkout(
     created_orders = []
 
     for cart_item in cart_items:
-        check_stock(cart_item)
+        locked_result = await db.execute(
+            select(Product).where(
+                Product.id == cart_item.product_id
+            ).with_for_update()  # row-level lock
+        )
+        locked_product = locked_result.scalars().first()
+        check_availability(locked_product)
+        check_stock(locked_product, cart_item.quantity)
 
-        cart_item.product.stock -= cart_item.quantity
-        total_amount = cart_item.product.price * cart_item.quantity
+        locked_product.stock -= cart_item.quantity
+        total_amount = locked_product.price * cart_item.quantity
 
         new_order = Order(
             quantity=cart_item.quantity,
@@ -123,7 +137,7 @@ async def checkout(
             total_amount=total_amount,
             address_id=address.id,
             customer_id=customer.id,
-            seller_id=cart_item.product.seller_id,
+            seller_id=locked_product.seller_id,
             product_id=cart_item.product_id,
         )
         db.add(new_order)
