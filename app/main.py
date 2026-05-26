@@ -1,9 +1,14 @@
 from fastapi import FastAPI
 from app.core.config import settings
 from app.api.endpoints import auth, customer, seller, address
-from app.api.endpoints import category, cart, order, review, product, support, admin
+from app.api.endpoints import category, cart, order, review
+from app.api.endpoints import product, support, admin
 from fastapi.middleware.cors import CORSMiddleware
 import importlib
+
+from fastapi.exceptions import ResponseValidationError
+from fastapi.responses import JSONResponse
+
 
 return_endpoint = importlib.import_module("app.api.endpoints.return")
 
@@ -99,3 +104,10 @@ app.include_router(
 async def health_check():
     return {"status": "ok"}
 
+
+@app.exception_handler(ResponseValidationError)
+async def validation_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc.errors())}
+    )
