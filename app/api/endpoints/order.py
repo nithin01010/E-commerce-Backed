@@ -16,6 +16,10 @@ from app.schemas.order import OrderCreate, OrderResponse, OrderStatusUpdate
 from app.api.deps import get_current_user
 from app.tasks.email import send_order_confirmation_email
 
+from fastapi_limiter.depends import RateLimiter
+from pyrate_limiter import Rate, Duration, Limiter
+
+
 router = APIRouter()
 
 
@@ -76,13 +80,17 @@ def check_stock(product, need):
             + " items left in stock"
         )
 
+
 # -----------------------------------------------------------------
+
+limiter_checkout = Limiter(Rate(10, Duration.MINUTE))
 
 
 @router.post(
     "/checkout",
     response_model=List[OrderResponse],
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(RateLimiter(limiter_checkout))]
 )
 async def checkout(
     order_in: OrderCreate,

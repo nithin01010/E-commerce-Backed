@@ -23,10 +23,13 @@ from pyrate_limiter import Rate, Duration, Limiter
 
 router = APIRouter()
 
+auth_limiter_register = Limiter(Rate(10, Duration.HOUR))
+
 
 @router.post(
     "/register", response_model=UserResponse,
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(RateLimiter(limiter=auth_limiter_register))]
 )
 async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == user_in.email))
@@ -228,10 +231,14 @@ async def refresh_token(
     return {"message": "Token refreshed successfully"}
 
 
+auth_limiter_forget = Limiter(Rate(3, Duration.HOUR))
+
+
 @router.post("/forgot-password")
 async def forgot_password(
     forgot_in: ForgetPassword,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    dependencies=[Depends(RateLimiter(auth_limiter_forget))]
 ):
     result = await db.execute(
         select(User).where(
@@ -251,14 +258,17 @@ async def forgot_password(
     print(f"http://localhost:5173/reset-password?token={reset_token}")
     print("=======================================================\n")
 
-    return {"message": """If the email exists, 
+    return {"message": """If the email exists,
     a password reset link has been sent."""}
+
+auth_limiter_reset = Limiter(Rate(3, Duration.HOUR))
 
 
 @router.post("/reset-password")
 async def reset_password(
     reset_in: ResetPassword,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    dependencies=[Depends(RateLimiter(auth_limiter_reset))]
 ):
     try:
         payload = jwt.decode(

@@ -12,6 +12,10 @@ from app.models.cart import Cart
 from app.schemas.cart import CartItemCreate, CartItemResponse, CartItemUpdate
 from app.api.deps import get_current_user
 
+from fastapi_limiter.depends import RateLimiter
+from pyrate_limiter import Rate, Duration, Limiter
+
+
 router = APIRouter()
 
 # ---------------------- HELPER functions -----------------
@@ -76,11 +80,14 @@ async def get_user_cart(
     )
     return result.scalars().all()
 
+limiter_add_to_cart = RateLimiter(Rate(30, Duration.MINUTE))
+
 
 @router.post(
     "/",
     response_model=CartItemResponse,
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(Rate(limiter_add_to_cart))]
 )
 async def add_to_cart(
     item_in: CartItemCreate,

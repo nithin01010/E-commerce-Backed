@@ -15,6 +15,9 @@ from app.models.review import Review
 from app.schemas.review import ReviewCreate, ReviewResponse
 from app.api.deps import get_current_user, get_redis
 
+from fastapi_limiter.depends import RateLimiter
+from pyrate_limiter import Rate, Duration, Limiter
+
 
 router = APIRouter()
 
@@ -101,11 +104,14 @@ async def update_seller_rating(db, order):
 
 # ------------------------------------------------------------------------
 
+limiter_product = Limiter(Rate(5, Duration.MINUTE))
+
 
 @router.post(
     "/",
     response_model=ReviewResponse,
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(limiter_product)]
 )
 async def create_review(
     review_in: ReviewCreate,
