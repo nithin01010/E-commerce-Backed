@@ -14,7 +14,7 @@ from app.models.order import Order
 from app.models.cart import Cart
 from app.schemas.order import OrderCreate, OrderResponse, OrderStatusUpdate
 from app.api.deps import get_current_user
-
+from app.tasks.email import send_order_confirmation_email
 
 router = APIRouter()
 
@@ -149,6 +149,7 @@ async def checkout(
 
     for o in created_orders:
         await db.refresh(o)
+        send_order_confirmation_email.delay(o.id, current_user.email)
     return created_orders
 
 

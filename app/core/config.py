@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     PLATFORM_COMMISSION_PERCENT: float
     LOW_STOCK_THRESHOLD: int
 
+    SMTP_SERVER: str
+    SMTP_PORT: str
+    SENDER_EMAIL: str
+    SENDER_PASSWORD: str
+
     class Config:
         env_file = ".env"
         case_sensitive = True
