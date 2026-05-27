@@ -19,7 +19,7 @@ from app.core.security import create_access_token, create_refresh_token
 from app.api.deps import get_redis, get_current_user
 
 from fastapi_limiter.depends import RateLimiter
-
+from pyrate_limiter import Rate, Duration, Limiter
 
 router = APIRouter()
 
@@ -48,10 +48,12 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
 
     return new_user
 
+auth_limiter = Limiter(Rate(5, Duration.MINUTE))
+
 
 @router.post(
     "/login",
-    dependencies=[Depends(RateLimiter(times=5, seconds=60))]
+    dependencies=[Depends(RateLimiter(limiter=auth_limiter))]
 )
 async def login(
     response: Response,
