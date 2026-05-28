@@ -2,7 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from typing import List
+from typing import List, Optional
+
+from app.schemas.pagination import PaginatedResponse
 
 from app.core.database import get_db
 from app.models.user import User
@@ -161,29 +163,41 @@ async def checkout(
     return created_orders
 
 
-@router.get("/", response_model=List[OrderResponse])
+@router.get("/", response_model=PaginatedResponse[OrderResponse])
 async def get_order(
+    cursor: Optional[int] = None,
+    limit: int = 20,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    query = select(Order)
     if current_user.role_id == 1:
         customer = await get_customer_profile(db, current_user.id)
-        result = await db.execute(select(Order).where(
-            Order.customer_id == customer.id
-            ))
+        query = query.where(Order.customer_id == customer.id)
     elif current_user.role_id == 2:
         seller = await get_seller_profile(db, current_user.id)
-        result = await db.execute(select(Order).where(
-            Order.seller_id == seller.id
-            ))
+        query = query.where(Order.seller_id == seller.id)
     elif current_user.role_id == 3:
-        result = await db.execute(select(Order))
+        pass
     else:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Role not recognized"
         )
 
-    return result.scalars().all()
+    if cursor:
+        query = query.where(Order.id > cursor)
+
+    query = query.order_by(Order.id.asc()).limit(limit + 1)
+    
+    result = await db.execute(query)
+    orders = list(result.scalars().all())
+    
+    next_cur = None
+    if len(orders) > limit:
+        next_cur = orders[-2].id
+        orders = orders[:-1]
+
+    return PaginatedResponse(items=orders, next_cursor=next_cur)
 
 
 @router.put("/{order_id}/status", response_model=OrderResponse)

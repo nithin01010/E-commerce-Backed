@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import List
+from typing import List, Optional
+from app.schemas.pagination import PaginatedResponse
 import redis.asyncio as redis
 from app.core.cache import get_cached, serialize_review, set_cache
 from app.core.cache import invalidate_pattern
@@ -159,53 +160,75 @@ async def create_review(
     return new_review
 
 
-@router.get("/product/{product_id}", response_model=List[ReviewResponse])
+@router.get("/product/{product_id}", response_model=PaginatedResponse[ReviewResponse])
 async def get_product_reviews(
     product_id: int,
+    cursor: Optional[int] = None,
+    limit: int = 20,
     db: AsyncSession = Depends(get_db),
     redis_client: redis.Redis = Depends(get_redis)
 ):
-    # Try cache
-    cache_key = f"reviews:product:{product_id}"
+    cache_key = f"reviews:product:{product_id}:cursor:{cursor}:limit:{limit}"
     cached = await get_cached(redis_client, cache_key)
     if cached:
         return cached
 
-    result = await db.execute(
-        select(Review).join(Order).where(Order.product_id == product_id)
-    )
-    reviews = result.scalars().all()
-    await set_cache(
-        redis_client,
-        cache_key,
-        [serialize_review(v) for v in reviews],
-        ttl=60
-    )
+    query = select(Review).join(Order).where(Order.product_id == product_id)
+    
+    if cursor:
+        query = query.where(Review.id > cursor)
+        
+    query = query.order_by(Review.id.asc()).limit(limit + 1)
+    
+    result = await db.execute(query)
+    reviews = list(result.scalars().all())
+    
+    next_cur = None
+    if len(reviews) > limit:
+        next_cur = reviews[-2].id
+        reviews = reviews[:-1]
+        
+    response_dict = {
+        "items": [serialize_review(v) for v in reviews],
+        "next_cursor": next_cur
+    }
+    
+    await set_cache(redis_client, cache_key, response_dict, ttl=60)
+    return PaginatedResponse(items=reviews, next_cursor=next_cur)
 
-    return reviews
 
-
-@router.get("/seller/{seller_id}", response_model=List[ReviewResponse])
+@router.get("/seller/{seller_id}", response_model=PaginatedResponse[ReviewResponse])
 async def get_seller_reviews(
     seller_id: int,
+    cursor: Optional[int] = None,
+    limit: int = 20,
     db: AsyncSession = Depends(get_db),
     redis_client: redis.Redis = Depends(get_redis)
 ):
-    # Try cache
-    cache_key = f"reviews:seller:{seller_id}"
+    cache_key = f"reviews:seller:{seller_id}:cursor:{cursor}:limit:{limit}"
     cached = await get_cached(redis_client, cache_key)
     if cached:
         return cached
 
-    result = await db.execute(
-        select(Review).join(Order).where(Order.seller_id == seller_id)
-    )
-    reviews = result.scalars().all()
-    await set_cache(
-        redis_client,
-        cache_key,
-        [serialize_review(v) for v in reviews],
-        ttl=60
-    )
-
-    return reviews
+    query = select(Review).join(Order).where(Order.seller_id == seller_id)
+    
+    if cursor:
+        query = query.where(Review.id > cursor)
+        
+    query = query.order_by(Review.id.asc()).limit(limit + 1)
+    
+    result = await db.execute(query)
+    reviews = list(result.scalars().all())
+    
+    next_cur = None
+    if len(reviews) > limit:
+        next_cur = reviews[-2].id
+        reviews = reviews[:-1]
+        
+    response_dict = {
+        "items": [serialize_review(v) for v in reviews],
+        "next_cursor": next_cur
+    }
+    
+    await set_cache(redis_client, cache_key, response_dict, ttl=60)
+    return PaginatedResponse(items=reviews, next_cursor=next_cur)

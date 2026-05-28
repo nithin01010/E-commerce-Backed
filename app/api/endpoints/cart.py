@@ -2,7 +2,8 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from typing import List
+from typing import List, Optional
+from app.schemas.pagination import PaginatedResponse
 
 from app.core.database import get_db
 from app.models.user import User
@@ -63,22 +64,36 @@ def check_cart(cart_item):
 # -------------------------------------------------
 
 
-@router.get("/", response_model=List[CartItemResponse])
+@router.get("/", response_model=PaginatedResponse[CartItemResponse])
 async def get_user_cart(
+    cursor: Optional[int] = None,
+    limit: int = 20,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     check_auth(current_user)
     customer = await get_customer_profile(db, current_user.id)
 
-    result = await db.execute(
-        select(Cart).where(
-            Cart.customer_id == customer.id
-        ).options(
-            selectinload(Cart.product).selectinload(Product.images)
-        )
+    query = select(Cart).where(
+        Cart.customer_id == customer.id
+    ).options(
+        selectinload(Cart.product).selectinload(Product.images)
     )
-    return result.scalars().all()
+
+    if cursor:
+        query = query.where(Cart.id > cursor)
+
+    query = query.order_by(Cart.id.asc()).limit(limit + 1)
+    
+    result = await db.execute(query)
+    cart_items = list(result.scalars().all())
+    
+    next_cur = None
+    if len(cart_items) > limit:
+        next_cur = cart_items[-2].id
+        cart_items = cart_items[:-1]
+
+    return PaginatedResponse(items=cart_items, next_cursor=next_cur)
 
 limiter_add_to_cart = RateLimiter(Rate(30, Duration.MINUTE))
 
@@ -87,7 +102,7 @@ limiter_add_to_cart = RateLimiter(Rate(30, Duration.MINUTE))
     "/",
     response_model=CartItemResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(RateLimiter(Limiter=limiter_add_to_cart))]
+    dependencies=[Depends(RateLimiter(limiter=limiter_add_to_cart))]
 )
 async def add_to_cart(
     item_in: CartItemCreate,
