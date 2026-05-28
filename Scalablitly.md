@@ -4,3 +4,4 @@
 4. Slow Query = Indexing
 5. Security = Rate Limiting: FastAPI_limiter, tokens: secure = True # still need to add 
 6. Celery
+7. PgBouncer

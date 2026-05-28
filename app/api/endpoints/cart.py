@@ -87,7 +87,7 @@ limiter_add_to_cart = RateLimiter(Rate(30, Duration.MINUTE))
     "/",
     response_model=CartItemResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(Rate(limiter_add_to_cart))]
+    dependencies=[Depends(RateLimiter(Limiter=limiter_add_to_cart))]
 )
 async def add_to_cart(
     item_in: CartItemCreate,

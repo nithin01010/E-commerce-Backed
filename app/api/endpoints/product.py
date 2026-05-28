@@ -15,6 +15,8 @@ import redis.asyncio as redis
 from app.core.cache import get_cached, set_cache, invalidate_pattern
 from app.core.cache import serialize_product
 
+from fastapi_limiter.depends import RateLimiter
+from pyrate_limiter import Rate, Duration, Limiter
 
 router = APIRouter()
 
@@ -82,11 +84,14 @@ async def get_product(db, product_id, seller_id):
 
 # ----------------------------------------------------------------------------------
 
+limiter_create_post = Limiter(Rate(5, Duration.MINUTE))
+
 
 @router.post(
     "/",
     response_model=ProductResponse,
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(RateLimiter(limiter=limiter_create_post))]
 )
 async def create_product(
     product_in: ProductCreate,

@@ -90,7 +90,7 @@ limiter_checkout = Limiter(Rate(10, Duration.MINUTE))
     "/checkout",
     response_model=List[OrderResponse],
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(RateLimiter(limiter_checkout))]
+    dependencies=[Depends(RateLimiter(limiter=limiter_checkout))]
 )
 async def checkout(
     order_in: OrderCreate,

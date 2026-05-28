@@ -234,11 +234,13 @@ async def refresh_token(
 auth_limiter_forget = Limiter(Rate(3, Duration.HOUR))
 
 
-@router.post("/forgot-password")
+@router.post(
+    "/forgot-password",
+    dependencies=[Depends(RateLimiter(auth_limiter_forget))]
+)
 async def forgot_password(
     forgot_in: ForgetPassword,
-    db: AsyncSession = Depends(get_db),
-    dependencies=[Depends(RateLimiter(auth_limiter_forget))]
+    db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(
         select(User).where(
@@ -264,11 +266,13 @@ async def forgot_password(
 auth_limiter_reset = Limiter(Rate(3, Duration.HOUR))
 
 
-@router.post("/reset-password")
+@router.post(
+    "/reset-password",
+    dependencies=[Depends(RateLimiter(auth_limiter_reset))]
+)
 async def reset_password(
     reset_in: ResetPassword,
-    db: AsyncSession = Depends(get_db),
-    dependencies=[Depends(RateLimiter(auth_limiter_reset))]
+    db: AsyncSession = Depends(get_db)
 ):
     try:
         payload = jwt.decode(
